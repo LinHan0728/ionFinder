@@ -58,7 +58,15 @@ MODIFICATIONS = {
         'oxidation': {'M': Counter({'C': 0, 'H': 0, 'O': 1, 'N': 0, 'S': 0})},
         'ox': {'M': Counter({'C': 0, 'H': 0, 'O': 1, 'N': 0, 'S': 0})},
         'carbamidomethyl': {'C': Counter({'C': 2, 'H': 3, 'O': 1, 'N': 1, 'S': 0})},
-        'iodoacetamide derivative': {'C': Counter({'C': 2, 'H': 3, 'O': 1, 'N': 1, 'S': 0})}
+        'iodoacetamide derivative': {'C': Counter({'C': 2, 'H': 3, 'O': 1, 'N': 1, 'S': 0})},
+        'tmt10plex': {'N-TERM': Counter({ 'C': 8, '(13)C': 4, 'H': 20, 'N': 1, '(15)N': 1, 'O': 2}), 
+                      'K': Counter({ 'C': 8, '(13)C': 4, 'H': 20, 'N': 1, '(15)N': 1, 'O': 2})},
+        'tmt6plex': {'N-TERM': Counter({ 'C': 8, '(13)C': 4, 'H': 20, 'N': 1, '(15)N': 1, 'O': 2}), 
+                      'K': Counter({ 'C': 8, '(13)C': 4, 'H': 20, 'N': 1, '(15)N': 1, 'O': 2}),
+                      'S': Counter({ 'C': 8, '(13)C': 4, 'H': 20, 'N': 1, '(15)N': 1, 'O': 2})},
+        'tmt16plex': {'N-TERM': Counter({ 'C': 8, '(13)C': 7, 'H': 25, 'N': 1, '(15)N': 2, 'O': 3}), 
+                      'K': Counter({  'C': 8, '(13)C': 7, 'H': 25, 'N': 1, '(15)N': 2, 'O': 3}),
+                      'S': Counter({ 'C': 8, '(13)C': 4, 'H': 20, 'N': 1, '(15)N': 1, 'O': 2})}
         }
 
 def get_mod(name, residue):

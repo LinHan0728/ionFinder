@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-#to use: python parse_fragpipe.py -i /Users/lin/MS_data/tran_set5_psm.tsv -o /Users/lin/MS_data/tran_set5_psm_parsed.tsv --fileExt mzML
+#to use: python parse_fragpipe.py -i /Users/lin/MS_data/Tran_PXD026581/tran_set5_psm.tsv -o /Users/lin/MS_data/tran_set5_psm_parsed_tmt.tsv --fileExt mzML
+#!/usr/bin/env python3
 #!/usr/bin/env python3
 import os
 import re
@@ -10,137 +11,154 @@ from modules.molecular_formula import MolecularFormula
 from modules import atom_table, utils
 
 # ------------------------------------------------------------------------------
-# 1) Map observed mass → canonical mod name
+# 1) Map observed mass → canonical mod name (for formula-building)
 # ------------------------------------------------------------------------------
 MASS_TO_NAME = {
-    57.0215: 'carbamidomethyl',
-    15.9949: 'oxidation',
-    0.9840:  'deamidation',   # Q/N deamidation or R citrullination
+    57.0215:    'carbamidomethyl',
+    15.9949:    'oxidation',
+    0.9840:     'deamidation',    # Q/N deamidation or R citrullination
+    229.16293:  'tmt10plex',      # TMT-10
+    304.20715:  'tmt16plex',      # TMTpro-16
 }
 
 def parse_assigned_mods_with_pos(s):
     """
-    Parse strings like "2Q(0.9840),5R(0.9840)" into
-    a list of (pos,residue,mass_str) tuples (zero-based).
+    Parse "N-term(229.1629),1C(57.0215),2C(57.0215),4K(229.1629)"
+    into [(0,'N-TERM','229.1629'), (0,'C','57.0215'), ...]
     """
     out = []
     if not isinstance(s, str) or not s:
         return out
-    for m in re.finditer(
-        r'\b(\d+)\s*([A-Za-z])\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)', s
-    ):
+
+    # N-term first
+    for m in re.finditer(r'\bN-?term\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)', s, flags=re.IGNORECASE):
+        out.append((0, 'N-TERM', m.group(1)))
+
+    # then residue-position
+    for m in re.finditer(r'\b(\d+)\s*([A-Za-z])\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)', s):
         pos      = int(m.group(1)) - 1
         residue  = m.group(2).upper()
         mass_str = m.group(3)
         out.append((pos, residue, mass_str))
+
     return out
 
 # ------------------------------------------------------------------------------
-# 2) Build molecular formula from sequence + mods
+# 2) Build formula & per‐residue mod masses
 # ------------------------------------------------------------------------------
-MODIFICATION_REGEX = re.compile(r'([A-Z_])\((.*?)(\(.*?\))?\)')
+MODIFICATION_REGEX = re.compile(r'([A-Z_])\((.*?)(?:\(.*?\))?\)')
 
-def extractModifications(seq, fixed_mods):
-    """
-    Given seq (pure letters) and a list of (pos,residue,mass_str),
-    return (aa_list, formula_object).
-    """
+def extractModifications(seq, mods):
+    # strip inline parentheses to get clean seq
     clean = ''
-    matches = list(MODIFICATION_REGEX.finditer(seq))
-    keep = [True] * len(seq)
-    for m in matches:
+    keep  = [True]*len(seq)
+    for m in MODIFICATION_REGEX.finditer(seq):
         for i in range(m.start()+1, m.end()):
             keep[i] = False
-    for ch, k in zip(seq, keep):
-        if k and ch != '_':
+    for ch,k in zip(seq,keep):
+        if k and ch!='_':
             clean += ch
 
-    aas = utils.strToAminoAcids(clean)
+    aas     = utils.strToAminoAcids(clean)
     formula = MolecularFormula(clean)
 
-    for pos, res, mass_str in fixed_mods:
-        mass = float(mass_str)
-        closest = min(MASS_TO_NAME, key=lambda k: abs(k - mass))
-        name = MASS_TO_NAME[closest]
-        # treat R-citrullination chemically as N-deamidation
-        table_res = 'N' if (name == 'deamidation' and res == 'R') else res
+    for pos, res, mass_str in mods:
+        m = float(mass_str)
+        closest = min(MASS_TO_NAME, key=lambda k: abs(k-m))
+        name    = MASS_TO_NAME[closest]
+
+        # treat R→citrullination as deamidation chemically
+        table_res = 'N' if (name=='deamidation' and res=='R') else res
         if name in atom_table.MODIFICATIONS and table_res in atom_table.MODIFICATIONS[name]:
             moddef = atom_table.get_mod(name, table_res)
-            mval   = atom_table.calc_mass(moddef)
+            delta  = atom_table.calc_mass(moddef)
             formula.add_mod(name, table_res)
-            aas[pos].mod += mval
+            if 0 <= pos < len(aas):
+                aas[pos].mod += delta
 
     return aas, formula
 
 def extractAllModifications(seqs, mods_list):
-    aa_all, form_all = [], []
+    aa_all, fm_all = [], []
     for seq, mods in zip(seqs, mods_list):
         aa, fm = extractModifications(seq, mods)
         aa_all.append(aa)
-        form_all.append(fm)
-    return aa_all, form_all
+        fm_all.append(fm)
+    return aa_all, fm_all
 
 # ------------------------------------------------------------------------------
 # 3) Main parser
 # ------------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
+    p = argparse.ArgumentParser(
         prog='parse_fragpipe',
         description='Convert FragPipe/MSFragger psm.tsv → IonFinder TSV'
     )
-    parser.add_argument('-i','--input',   required=True, help='tab-delimited psm.tsv')
-    parser.add_argument('-o','--output',  default='parsed.tsv', help='output TSV path')
-    parser.add_argument('--fileExt',       default='mzML',     help='extension for precursorFile')
-    args = parser.parse_args()
+    p.add_argument('-i','--input',   required=True, help='tab-delimited psm.tsv')
+    p.add_argument('-o','--output',  default='parsed.tsv', help='output TSV path')
+    p.add_argument('--fileExt',      default='mzML',     help='extension for precursorFile')
+    args = p.parse_args()
 
     df = pd.read_csv(args.input, sep='\t', low_memory=False)
     df.columns = df.columns.str.strip()
 
-    # 3.1 Use the unmodified 'Peptide' column for base sequence
+    # 3.1 Unmodified base peptides & parse mods
     base_peptides = df['Peptide'].str.upper().tolist()
+    mods_list     = df['Assigned Modifications']\
+                        .apply(parse_assigned_mods_with_pos)\
+                        .tolist()
+    _, form_all   = extractAllModifications(base_peptides, mods_list)
 
-    # 3.2 Parse Assigned Modifications into (pos,residue,mass_str)
-    mods_list = df['Assigned Modifications'].apply(parse_assigned_mods_with_pos).tolist()
-
-    # 3.3 Compute formulas
-    _, form_all = extractAllModifications(base_peptides, mods_list)
-
-    # 3.4 Derive sampleName, scanNum, and precursorFile from 'Spectrum'
+    # 3.2 sampleName, scanNum, precursorFile
     sample_name    = df['Spectrum'].str.split(r'\.', n=1).str[0]
     scanNum        = df['Spectrum'].str.extract(r'\.(\d+)\.')[0].astype(int)
     precursor_file = sample_name + f".{args.fileExt}"
 
-    # 3.5 Build sequences with modifications AFTER each letter:
+    # 3.3 Build modified sequences
     sequences = []
-    for idx, pep in enumerate(base_peptides):
+    for pep, mods in zip(base_peptides, mods_list):
+        # group by position
         pos_map = {}
-        for pos, res, mass in mods_list[idx]:
-            pos_map.setdefault(pos, []).append((res, mass))
+        for pos,res,mass in mods:
+            pos_map.setdefault(pos, []).append((res,mass))
+
+        # collapse all N-term masses into one
+        nterm_mass = 0.0
+        for res,mass in pos_map.get(0, []):
+            if res=='N-TERM':
+                nterm_mass += float(mass)
 
         s = ''
-        for pos, letter in enumerate(pep):
-            s += letter
-            for res, mass in pos_map.get(pos, []):
-                if res == 'R':
+        if nterm_mass:
+            s += f'({nterm_mass:.4f})'
+
+        # now each residue
+        for i, aa in enumerate(pep):
+            s += aa
+            for res,mass in pos_map.get(i, []):
+                if res=='N-TERM':
+                    continue
+                m    = float(mass)
+                closest = min(MASS_TO_NAME, key=lambda k: abs(k-m))
+                name = MASS_TO_NAME[closest]
+
+                # R‐mod → star
+                if name=='deamidation' and res=='R':
                     s += '*'
                 else:
-                    s += f'({mass})'
+                    # if TMT use the numeric mass, else the mass
+                    s += f'({m:.4f})'
+
         sequences.append(s)
 
-    # 3.6 Gather parent columns and Observed M/Z from input
-    parent_id_list          = df['Protein ID']
-    parent_protein_list     = df['Entry Name']
-    parent_description_list = df['Protein Description']
-    parent_mz_list          = df['Observed M/Z']
-
-    # 3.7 Assemble output DataFrame
+    # 3.4 Parent & M/Z columns
     out = pd.DataFrame({
         'sampleName':         sample_name,
         'precursorFile':      precursor_file,
-        'parentId':           parent_id_list,
-        'parentProtein':      parent_protein_list,
-        'parentDescription':  parent_description_list,
-        'parent_mz':          parent_mz_list,
+        'parentId':           df['Protein ID'],
+        'parentProtein':      df['Entry Name'],
+        'parentDescription':  df['Protein Description'],
+        'parent_mz':          df['Observed M/Z'],
         'sequence':           sequences,
         'formula':            [str(f) for f in form_all],
         'scanNum':            scanNum
