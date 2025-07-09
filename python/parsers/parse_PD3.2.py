@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#python parse_PD3.2.py -i /Users/lin/Desktop/psm_b1.tsv -o /Users/lin/Desktop/psm_b1_parsed.tsv --fileExt mzML
 import os
 import re
 import argparse
@@ -16,6 +17,8 @@ NORMALIZE_MOD = {
     'tmt6plex':         'tmt6plex',
     'tmt10plex':        'tmt10plex',
     'tmtpro16plex':     'tmt16plex',
+    'tmtpro':           'tmt16plex',
+    'tmtpro16':         'tmt16plex',
     'tmt16plex':        'tmt16plex',
     'oxidation':        'oxidation',
     'carbamidomethyl':  'carbamidomethyl',
